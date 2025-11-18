@@ -177,11 +177,19 @@ app.get('/debug', async (req, res) => {
                            !url.hostname.includes('openai.com');
           
           if (isExternal && url.protocol.startsWith('http')) {
+            // Get all query parameters
+            const params = {};
+            url.searchParams.forEach((value, key) => {
+              params[key] = value;
+            });
+            
             const linkData = {
               index: i,
               href: link.href,
               text: link.textContent.trim(),
               hostname: url.hostname,
+              queryParams: params,
+              utmSource: url.searchParams.get('utm_source'),
               hasCitationMarker: url.searchParams.get('utm_source') === 'chatgpt.com'
             };
             
@@ -199,12 +207,19 @@ app.get('/debug', async (req, res) => {
         }
       });
       
+      // Sample first 20 links for debugging
+      const allLinksSample = allLinks.slice(0, 20).map(l => ({
+        href: l.href,
+        text: l.textContent.trim().substring(0, 50)
+      }));
+      
       return {
         totalLinks: allLinks.length,
         citationLinksWithUtmSource: citationLinks.length,
         externalLinks: externalLinks.length,
         citationLinks: citationLinks,
         links: externalLinks,
+        allLinksSample: allLinksSample,
         title: document.title,
         bodyLength: document.body.innerHTML.length
       };
