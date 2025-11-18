@@ -28,7 +28,8 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       health: '/',
-      scrape: '/scrape?url=https://chatgpt.com/share/xxxxx'
+      scrape: '/scrape?url=https://chatgpt.com/share/xxxxx&token=YOUR_SESSION_TOKEN',
+      debug: '/debug?url=https://chatgpt.com/share/xxxxx&token=YOUR_SESSION_TOKEN'
     }
   });
 });
