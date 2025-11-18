@@ -3,7 +3,7 @@
 (() => {
     // ===== CONFIGURATION =====
     // Replace with your deployed scraper URL:
-    const SCRAPER_API = "https://YOUR-APP-NAME.onrender.com"; // or .railway.app or .fly.dev
+    const SCRAPER_API = "https://drafts-chatgpt-importer.onrender.com"; // or .railway.app or .fly.dev
     const ENABLE_CITATIONS = true; // Set to false to skip citation scraping
     // =========================
 
@@ -49,26 +49,39 @@
 
     // Try to fetch citations from scraper API
     let citations = [];
+    let citationDebug = "Citations: disabled";
+    
     if (ENABLE_CITATIONS && SCRAPER_API !== "https://YOUR-APP-NAME.onrender.com") {
         console.log("Fetching citations from scraper...");
+        citationDebug = "Citations: fetching...";
+        
         const citationHttp = HTTP.create();
         const citationResponse = citationHttp.request({
             url: `${SCRAPER_API}/scrape?url=${encodeURIComponent(shareURL)}`,
-            method: "GET"
+            method: "GET",
+            timeout: 60 // Wait up to 60 seconds for free tier spin-up
         });
 
         if (citationResponse.success) {
             try {
                 const citationData = JSON.parse(citationResponse.responseText);
+                console.log("Citation API response:", JSON.stringify(citationData));
+                
                 if (citationData.success && citationData.citations) {
                     citations = citationData.citations;
-                    console.log(`Found ${citations.length} citations`);
+                    citationDebug = `Citations: found ${citations.length}`;
+                    console.log(`✓ Found ${citations.length} citations`);
+                } else {
+                    citationDebug = "Citations: none found in page";
+                    console.log("No citations in API response");
                 }
             } catch (e) {
+                citationDebug = `Citations: parse error - ${e}`;
                 console.log("Could not parse citation data:", e);
             }
         } else {
-            console.log("Citation scraper request failed (this is optional)");
+            citationDebug = `Citations: API failed (${citationResponse.statusCode || 'unknown error'})`;
+            console.log("Citation scraper request failed:", citationResponse.error || citationResponse.statusCode);
         }
     }
 
@@ -142,22 +155,34 @@
             text = text.substring(0, entityIndex) + text.substring(endIndex);
         }
 
-        // 2. Replace citation tags with actual links (if we have them)
-        // Look for patterns like: citeturn0news27, cite1, [1], etc.
-        const citeTurnRegex = /cite(?:turn\d+)?([a-z]+)?(\d+)/gi;
-        text = text.replace(citeTurnRegex, (match, letters, num) => {
-            const citationNum = parseInt(num);
-            if (citationMap.has(citationNum)) {
-                const url = citationMap.get(citationNum);
-                return `[${citationNum}](${url})`;
+        // 2. Replace citation tags with [Cite](URL) markdown links
+        // Patterns like: citeturn0search4turn0search21, citeturn0news27, cite1, etc.
+        
+        // First, try to match citation tags with URLs from the citations array
+        // Since citation tags don't have clear numbers, we'll replace them sequentially
+        let citationIndex = 0;
+        
+        // Match cite followed by any combination of alphanumeric (handles all variations)
+        text = text.replace(/cite(?:turn\d+)?(?:search\d+)?(?:turn\d+)?(?:search\d+)?(?:news\d+)?(?:[a-z]+\d+)*/gi, (match) => {
+            // If we have a citation URL available, use it
+            if (citationIndex < citations.length && citations[citationIndex]) {
+                const url = citations[citationIndex].url;
+                citationIndex++;
+                return `[Cite](${url})`;
             }
-            // If no URL found, just remove the tag
-            return '';
+            // No URL available - replace with placeholder
+            citationIndex++;
+            return '[Cite]';
         });
-
-        // Remove any remaining citation tags
-        text = text.replace(/<cite[^>]*>([^<]*)<\/cite>/g, '');
-        text = text.replace(/\bcite[a-z0-9]+\b/gi, '');
+        
+        // Fallback: catch any remaining cite+alphanumeric that we missed
+        text = text.replace(/\bcite[a-z0-9]+/gi, '[Cite]');
+        
+        // Handle HTML cite tags
+        text = text.replace(/<cite[^>]*>([^<]*)<\/cite>/g, '[Cite]');
+        
+        // Clean up any double spaces left from replacement
+        text = text.replace(/\s{2,}/g, ' ');
 
         // 3. Find raw URLs and convert to markdown
         const urlRegex = /(https?:\/\/[^\s)]+)/g;
@@ -243,6 +268,11 @@
     let out = `# ${title}\n\n`;
     out += `**[Source](${shareURL}):** ${shareURL}\n\n`;
     
+    // Add debug info about citations
+    if (ENABLE_CITATIONS) {
+        out += `<!-- ${citationDebug} -->\n\n`;
+    }
+    
     if (citations.length > 0) {
         out += `## Citations\n\n`;
         citations.forEach((cite, index) => {
@@ -270,6 +300,8 @@
     editor.load(nd);
     editor.activate();
 
-    const citationMsg = citations.length > 0 ? ` with ${citations.length} citations` : '';
-    app.displaySuccessMessage(`Conversation imported${citationMsg} ✔︎`);
+    const citationMsg = citations.length > 0 
+        ? ` with ${citations.length} citations` 
+        : (ENABLE_CITATIONS ? ' (no citations found)' : '');
+    app.displaySuccessMessage(`Conversation imported${citationMsg} ✔︎\n${citationDebug}`);
 })();
