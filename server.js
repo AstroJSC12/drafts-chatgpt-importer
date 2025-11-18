@@ -37,6 +37,69 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Debug endpoint - returns raw HTML for troubleshooting
+app.get('/debug', async (req, res) => {
+  const { url } = req.query;
+  
+  if (!url) {
+    return res.status(400).json({ 
+      error: 'Missing URL parameter',
+      usage: '/debug?url=https://chatgpt.com/share/xxxxx'
+    });
+  }
+
+  let browser = null;
+  
+  try {
+    browser = await chromium.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(3000);
+    
+    // Get page content and link info
+    const debugInfo = await page.evaluate(() => {
+      const allLinks = Array.from(document.querySelectorAll('a[href]'));
+      const externalLinks = allLinks
+        .filter(l => l.href.startsWith('http') && 
+                     !l.href.includes('chatgpt.com') && 
+                     !l.href.includes('openai.com'))
+        .map((l, i) => ({
+          index: i,
+          href: l.href,
+          text: l.textContent.trim(),
+          html: l.outerHTML
+        }));
+      
+      return {
+        totalLinks: allLinks.length,
+        externalLinks: externalLinks.length,
+        links: externalLinks,
+        title: document.title,
+        bodyLength: document.body.innerHTML.length
+      };
+    });
+
+    await browser.close();
+    
+    return res.json({
+      success: true,
+      ...debugInfo
+    });
+
+  } catch (error) {
+    if (browser) await browser.close();
+    return res.status(500).json({ 
+      error: error.message 
+    });
+  }
+});
+
 // Scrape endpoint
 app.get('/scrape', async (req, res) => {
   const { url } = req.query;
@@ -94,15 +157,24 @@ app.get('/scrape', async (req, res) => {
       const citationData = [];
       const seenUrls = new Set();
       
-      // Method 1: Find all external links (potential citations)
-      const allLinks = document.querySelectorAll('a[href^="http"]');
+      // Find ALL links on the page
+      const allLinks = document.querySelectorAll('a[href]');
+      console.log(`Total links found: ${allLinks.length}`);
       
       allLinks.forEach((link, index) => {
         const href = link.href;
         const text = link.textContent.trim();
         
-        // Skip ChatGPT's own links
-        if (href.includes('chatgpt.com') || href.includes('openai.com')) {
+        // Only process HTTP/HTTPS links
+        if (!href.startsWith('http')) {
+          return;
+        }
+        
+        // Skip ChatGPT's own links and common non-citation domains
+        if (href.includes('chatgpt.com') || 
+            href.includes('openai.com') ||
+            href.includes('github.com/openai') ||
+            href.includes('help.openai.com')) {
           return;
         }
         
@@ -112,39 +184,27 @@ app.get('/scrape', async (req, res) => {
         }
         seenUrls.add(href);
         
-        // Try to find citation number
+        // Get more context to understand the link
+        const parent = link.parentElement;
+        const parentClass = parent?.className || '';
+        const linkClass = link.className || '';
+        
+        // Try to find citation number from text
         const citationMatch = text.match(/\[?(\d+)\]?/);
-        const parentText = link.parentElement?.textContent || '';
         
         citationData.push({
-          number: citationMatch ? parseInt(citationMatch[1]) : index + 1,
+          number: citationMatch ? parseInt(citationMatch[1]) : null,
           url: href,
-          text: text,
-          context: parentText.substring(0, 200).trim()
+          text: text || 'Link',
+          classes: `link:${linkClass} parent:${parentClass}`,
+          position: index
         });
       });
 
-      // Method 2: Look for citation-specific markup
-      const citationElements = document.querySelectorAll('[class*="citation"], [class*="reference"], [data-cite], sup a');
-      citationElements.forEach((element) => {
-        const link = element.tagName === 'A' ? element : element.querySelector('a');
-        if (link && link.href && !seenUrls.has(link.href)) {
-          if (!link.href.includes('chatgpt.com') && !link.href.includes('openai.com')) {
-            seenUrls.add(link.href);
-            citationData.push({
-              url: link.href,
-              text: link.textContent.trim(),
-              type: 'citation_element'
-            });
-          }
-        }
-      });
-
-      // Sort by citation number if available
-      return citationData.sort((a, b) => {
-        if (a.number && b.number) return a.number - b.number;
-        return 0;
-      });
+      console.log(`External links found: ${citationData.length}`);
+      
+      // Return all external links in order they appear
+      return citationData;
     });
 
     await browser.close();
