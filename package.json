@@ -1,0 +1,19 @@
+{
+  "name": "chatgpt-citation-scraper",
+  "version": "1.0.0",
+  "description": "Vercel API to scrape citations from ChatGPT share pages",
+  "main": "api/scrape.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "playwright-aws-lambda": "^0.10.0"
+  },
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}

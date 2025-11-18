@@ -15,3 +15,11 @@
 
 # Logs
 *.log
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Vercel
+.vercel
