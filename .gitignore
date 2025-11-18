@@ -23,3 +23,12 @@ yarn.lock
 
 # Vercel
 .vercel
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Fly.io
+fly.toml.local
+.fly/

@@ -1,0 +1,14 @@
+# Render.com deployment configuration
+# Auto-deploys from GitHub when you connect your repo
+
+services:
+  - type: web
+    name: chatgpt-citation-scraper
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health

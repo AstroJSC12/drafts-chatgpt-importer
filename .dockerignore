@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+DEPLOYMENT.md
+TODO.md
+.DS_Store
+*.md
+!package.json
+Drafts_Action_Get_ChatGPT_Convo.js
+server-local.js
+api/
+vercel.json
