@@ -42,3 +42,29 @@
 ## Current Issues
 - [ ] Entity annotations with unicode quotes not being removed
 - [ ] Citation tags still appearing in output despite cleanup attempts
+- [x] **Browser automation on Vercel serverless doesn't work** - Tried Puppeteer, @sparticuz/chromium, and Playwright
+  - Issue: Missing system libraries (libnss3.so) and browser binaries in serverless environment
+  - Vercel's free tier has limitations for running headless browsers
+
+## Alternative Approaches for Citation Scraping
+1. **Use a paid browser automation service**
+   - Browserless.io ($20/month) - managed browser instances
+   - ScrapingBee (pay-per-request) - simpler API
+   - Pros: Works reliably, no infrastructure management
+   - Cons: Monthly cost
+
+2. **Deploy to container-based platform**
+   - Railway or Render with Docker
+   - Can install all necessary system libraries
+   - Pros: Full control, still affordable
+   - Cons: Slightly more complex setup
+
+3. **Different parsing approach**
+   - Check if ChatGPT API provides citation data (unlikely based on research)
+   - Parse the static HTML differently without JavaScript rendering
+   - Use regex/text parsing on API response instead of rendered page
+
+4. **Accept limitation for now**
+   - Focus on cleaning up entity/citation tags from API response
+   - Document that citation URLs are not available via this method
+   - Users can manually add citations if needed
