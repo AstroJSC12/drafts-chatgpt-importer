@@ -99,28 +99,61 @@ app.get('/debug', async (req, res) => {
     });
     
     const context = await browser.newContext();
+    
+    // Add authentication cookies if token provided
+    if (token) {
+      await context.addCookies([
+        {
+          name: '__Secure-next-auth.session-token',
+          value: token,
+          domain: '.chatgpt.com',
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax'
+        }
+      ]);
+      console.log('Debug: Using authenticated session');
+    }
+    
     const page = await context.newPage();
     
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
+    
+    // Wait for citation links
+    try {
+      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 5000 });
+    } catch (e) {
+      console.log('Debug: No utm_source links found');
+    }
     
     // Get page content and link info
     const debugInfo = await page.evaluate(() => {
       const allLinks = Array.from(document.querySelectorAll('a[href]'));
+      
+      // Look for citation links with utm_source
+      const citationLinks = Array.from(document.querySelectorAll('a[href*="utm_source=chatgpt.com"]'));
+      
       const externalLinks = allLinks
         .filter(l => l.href.startsWith('http') && 
-                     !l.href.includes('chatgpt.com') && 
+                     !l.href.includes('chatgpt.com/') && 
                      !l.href.includes('openai.com'))
         .map((l, i) => ({
           index: i,
           href: l.href,
           text: l.textContent.trim(),
-          html: l.outerHTML
+          hasCitationMarker: l.href.includes('utm_source=chatgpt.com')
         }));
       
       return {
         totalLinks: allLinks.length,
+        citationLinksWithUtmSource: citationLinks.length,
         externalLinks: externalLinks.length,
+        citationLinks: citationLinks.map(l => ({
+          href: l.href,
+          text: l.textContent.trim()
+        })),
         links: externalLinks,
         title: document.title,
         bodyLength: document.body.innerHTML.length
