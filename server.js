@@ -65,8 +65,8 @@ app.get('/html', async (req, res) => {
     }
     
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(8000);
     
     const html = await page.content();
     await browser.close();
@@ -118,14 +118,15 @@ app.get('/debug', async (req, res) => {
     
     const page = await context.newPage();
     
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(5000);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(8000);
     
     // Wait for citation links
     try {
-      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 5000 });
+      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 10000 });
+      console.log('Debug: Citation links found');
     } catch (e) {
-      console.log('Debug: No utm_source links found');
+      console.log('Debug: No utm_source links found after waiting');
     }
     
     // Get page content and link info
@@ -236,20 +237,24 @@ app.get('/scrape', async (req, res) => {
     const page = await context.newPage();
     
     console.log(`[${new Date().toISOString()}] Navigating to page...`);
+    
+    // Use domcontentloaded instead of networkidle - more reliable
     await page.goto(url, { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
     });
 
-    // Wait for content to render - increased timeout for citation links
-    await page.waitForTimeout(5000);
+    console.log(`[${new Date().toISOString()}] Page loaded, waiting for content...`);
+    
+    // Wait longer for React/Next.js to render citation links
+    await page.waitForTimeout(8000);
     
     // Wait for citation links to be present
     try {
-      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 5000 });
-      console.log('Citation links detected');
+      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 10000 });
+      console.log('Citation links detected!');
     } catch (e) {
-      console.log('No citation links found with utm_source');
+      console.log('Warning: No citation links found with utm_source after waiting');
     }
 
     console.log(`[${new Date().toISOString()}] Extracting citations...`);
