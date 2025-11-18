@@ -208,8 +208,16 @@ app.get('/scrape', async (req, res) => {
       timeout: 30000 
     });
 
-    // Wait for content to render
-    await page.waitForTimeout(3000);
+    // Wait for content to render - increased timeout for citation links
+    await page.waitForTimeout(5000);
+    
+    // Wait for citation links to be present
+    try {
+      await page.waitForSelector('a[href*="utm_source=chatgpt.com"]', { timeout: 5000 });
+      console.log('Citation links detected');
+    } catch (e) {
+      console.log('No citation links found with utm_source');
+    }
 
     console.log(`[${new Date().toISOString()}] Extracting citations...`);
     const citations = await page.evaluate(() => {
@@ -266,32 +274,55 @@ app.get('/scrape', async (req, res) => {
         }
       });
       
-      // FALLBACK: Find ALL links on the page
-      const allLinks = document.querySelectorAll('a[href]');
-      console.log(`Total links found: ${allLinks.length}`);
+      // BEST APPROACH: Find citation links by ChatGPT's utm_source marker
+      const citationLinks = document.querySelectorAll('a[href*="utm_source=chatgpt.com"]');
+      console.log(`Found ${citationLinks.length} links with utm_source=chatgpt.com`);
       
-      allLinks.forEach((link, index) => {
+      citationLinks.forEach((link, index) => {
         const href = link.href;
         const text = link.textContent.trim();
-        
-        // Only process HTTP/HTTPS links
-        if (!href.startsWith('http')) {
-          return;
-        }
-        
-        // Skip ChatGPT's own links and common non-citation domains
-        if (href.includes('chatgpt.com') || 
-            href.includes('openai.com') ||
-            href.includes('github.com/openai') ||
-            href.includes('help.openai.com')) {
-          return;
-        }
         
         // Skip duplicates
         if (seenUrls.has(href)) {
           return;
         }
         seenUrls.add(href);
+        
+        citationData.push({
+          number: index + 1,
+          url: href,
+          text: text || 'Citation',
+          source: 'utm_marker'
+        });
+      });
+      
+      // FALLBACK: Find ALL external links if no utm_source links found
+      if (citationData.length === 0) {
+        const allLinks = document.querySelectorAll('a[href]');
+        console.log(`Fallback: Total links found: ${allLinks.length}`);
+        
+        allLinks.forEach((link, index) => {
+          const href = link.href;
+          const text = link.textContent.trim();
+          
+          // Only process HTTP/HTTPS links
+          if (!href.startsWith('http')) {
+            return;
+          }
+          
+          // Skip ChatGPT's own links (but not links WITH chatgpt.com as utm_source)
+          if (href.includes('chatgpt.com/') || 
+              href.includes('openai.com') ||
+              href.includes('github.com/openai') ||
+              href.includes('help.openai.com')) {
+            return;
+          }
+          
+          // Skip duplicates
+          if (seenUrls.has(href)) {
+            return;
+          }
+          seenUrls.add(href);
         
         // Get more context to understand the link
         const parent = link.parentElement;
@@ -301,16 +332,18 @@ app.get('/scrape', async (req, res) => {
         // Try to find citation number from text
         const citationMatch = text.match(/\[?(\d+)\]?/);
         
-        citationData.push({
-          number: citationMatch ? parseInt(citationMatch[1]) : null,
-          url: href,
-          text: text || 'Link',
-          classes: `link:${linkClass} parent:${parentClass}`,
-          position: index
+          citationData.push({
+            number: citationMatch ? parseInt(citationMatch[1]) : null,
+            url: href,
+            text: text || 'Link',
+            classes: `link:${linkClass} parent:${parentClass}`,
+            position: index,
+            source: 'external_link'
+          });
         });
-      });
+      }
 
-      console.log(`External links found: ${citationData.length}`);
+      console.log(`Total citations found: ${citationData.length}`);
       
       // Return all external links in order they appear
       return citationData;
