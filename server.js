@@ -166,28 +166,44 @@ app.get('/debug', async (req, res) => {
     const debugInfo = await page.evaluate(() => {
       const allLinks = Array.from(document.querySelectorAll('a[href]'));
       
-      // Look for citation links with utm_source
-      const citationLinks = Array.from(document.querySelectorAll('a[href*="utm_source=chatgpt.com"]'));
+      // Check each link's URL to see if it has utm_source parameter
+      const citationLinks = [];
+      const externalLinks = [];
       
-      const externalLinks = allLinks
-        .filter(l => l.href.startsWith('http') && 
-                     !l.href.includes('chatgpt.com/') && 
-                     !l.href.includes('openai.com'))
-        .map((l, i) => ({
-          index: i,
-          href: l.href,
-          text: l.textContent.trim(),
-          hasCitationMarker: l.href.includes('utm_source=chatgpt.com')
-        }));
+      allLinks.forEach((link, i) => {
+        try {
+          const url = new URL(link.href);
+          const isExternal = !url.hostname.includes('chatgpt.com') && 
+                           !url.hostname.includes('openai.com');
+          
+          if (isExternal && url.protocol.startsWith('http')) {
+            const linkData = {
+              index: i,
+              href: link.href,
+              text: link.textContent.trim(),
+              hostname: url.hostname,
+              hasCitationMarker: url.searchParams.get('utm_source') === 'chatgpt.com'
+            };
+            
+            externalLinks.push(linkData);
+            
+            if (url.searchParams.get('utm_source') === 'chatgpt.com') {
+              citationLinks.push({
+                href: link.href,
+                text: link.textContent.trim()
+              });
+            }
+          }
+        } catch (e) {
+          // Skip invalid URLs
+        }
+      });
       
       return {
         totalLinks: allLinks.length,
         citationLinksWithUtmSource: citationLinks.length,
         externalLinks: externalLinks.length,
-        citationLinks: citationLinks.map(l => ({
-          href: l.href,
-          text: l.textContent.trim()
-        })),
+        citationLinks: citationLinks,
         links: externalLinks,
         title: document.title,
         bodyLength: document.body.innerHTML.length
@@ -361,72 +377,82 @@ app.get('/scrape', async (req, res) => {
       });
       
       // BEST APPROACH: Find citation links by ChatGPT's utm_source marker
-      const citationLinks = document.querySelectorAll('a[href*="utm_source=chatgpt.com"]');
-      console.log(`Found ${citationLinks.length} links with utm_source=chatgpt.com`);
+      // Check all links and parse their URLs properly
+      const allLinkElements = document.querySelectorAll('a[href]');
+      let citationCount = 0;
       
-      citationLinks.forEach((link, index) => {
-        const href = link.href;
-        const text = link.textContent.trim();
-        
-        // Skip duplicates
-        if (seenUrls.has(href)) {
-          return;
+      allLinkElements.forEach((link) => {
+        try {
+          const url = new URL(link.href);
+          
+          // Check if this is an external link with utm_source=chatgpt.com
+          const isExternal = !url.hostname.includes('chatgpt.com') && 
+                           !url.hostname.includes('openai.com');
+          const hasCitationMarker = url.searchParams.get('utm_source') === 'chatgpt.com';
+          
+          if (isExternal && hasCitationMarker) {
+            citationCount++;
+            const href = link.href;
+            const text = link.textContent.trim();
+            
+            // Skip duplicates
+            if (seenUrls.has(href)) {
+              return;
+            }
+            seenUrls.add(href);
+            
+            citationData.push({
+              number: citationCount,
+              url: href,
+              text: text || 'Citation',
+              source: 'utm_marker'
+            });
+          }
+        } catch (e) {
+          // Skip invalid URLs
         }
-        seenUrls.add(href);
-        
-        citationData.push({
-          number: index + 1,
-          url: href,
-          text: text || 'Citation',
-          source: 'utm_marker'
-        });
       });
+      
+      console.log(`Found ${citationCount} links with utm_source=chatgpt.com`);
       
       // FALLBACK: Find ALL external links if no utm_source links found
       if (citationData.length === 0) {
-        const allLinks = document.querySelectorAll('a[href]');
-        console.log(`Fallback: Total links found: ${allLinks.length}`);
+        console.log(`Fallback: Looking for any external links...`);
         
-        allLinks.forEach((link, index) => {
-          const href = link.href;
-          const text = link.textContent.trim();
-          
-          // Only process HTTP/HTTPS links
-          if (!href.startsWith('http')) {
-            return;
+        allLinkElements.forEach((link, index) => {
+          try {
+            const url = new URL(link.href);
+            const href = link.href;
+            const text = link.textContent.trim();
+            
+            // Only process HTTP/HTTPS links
+            if (!url.protocol.startsWith('http')) {
+              return;
+            }
+            
+            // Skip ChatGPT's own links
+            if (url.hostname.includes('chatgpt.com') || 
+                url.hostname.includes('openai.com')) {
+              return;
+            }
+            
+            // Skip duplicates
+            if (seenUrls.has(href)) {
+              return;
+            }
+            seenUrls.add(href);
+            
+            citationData.push({
+              number: index + 1,
+              url: href,
+              text: text || 'Citation',
+              source: 'fallback'
+            });
+          } catch (e) {
+            // Skip invalid URLs
           }
-          
-          // Skip ChatGPT's own links (but not links WITH chatgpt.com as utm_source)
-          if (href.includes('chatgpt.com/') || 
-              href.includes('openai.com') ||
-              href.includes('github.com/openai') ||
-              href.includes('help.openai.com')) {
-            return;
-          }
-          
-          // Skip duplicates
-          if (seenUrls.has(href)) {
-            return;
-          }
-          seenUrls.add(href);
-        
-        // Get more context to understand the link
-        const parent = link.parentElement;
-        const parentClass = parent?.className || '';
-        const linkClass = link.className || '';
-        
-        // Try to find citation number from text
-        const citationMatch = text.match(/\[?(\d+)\]?/);
-        
-          citationData.push({
-            number: citationMatch ? parseInt(citationMatch[1]) : null,
-            url: href,
-            text: text || 'Link',
-            classes: `link:${linkClass} parent:${parentClass}`,
-            position: index,
-            source: 'external_link'
-          });
         });
+        console.log(`Fallback: Found ${citationData.length} external links`);
       }
 
       console.log(`Total citations found: ${citationData.length}`);
