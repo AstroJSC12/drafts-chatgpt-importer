@@ -38,9 +38,50 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Raw HTML endpoint - returns actual page HTML for analysis
+app.get('/html', async (req, res) => {
+  const { url, token } = req.query;
+  
+  if (!url) {
+    return res.status(400).json({ error: 'Missing URL parameter' });
+  }
+  
+  let browser = null;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    
+    // Add auth if provided
+    if (token) {
+      await context.addCookies([{
+        name: '__Secure-next-auth.session-token',
+        value: token,
+        domain: '.chatgpt.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax'
+      }]);
+    }
+    
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(3000);
+    
+    const html = await page.content();
+    await browser.close();
+    
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    if (browser) await browser.close();
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Debug endpoint - returns raw HTML for troubleshooting
 app.get('/debug', async (req, res) => {
-  const { url } = req.query;
+  const { url, token } = req.query;
   
   if (!url) {
     return res.status(400).json({ 
@@ -175,7 +216,57 @@ app.get('/scrape', async (req, res) => {
       const citationData = [];
       const seenUrls = new Set();
       
-      // Find ALL links on the page
+      // FIRST: Try to find citation data in Next.js data or window objects
+      try {
+        // Look for __NEXT_DATA__ which Next.js apps use
+        const nextDataScript = document.getElementById('__NEXT_DATA__');
+        if (nextDataScript) {
+          const nextData = JSON.parse(nextDataScript.textContent);
+          console.log('Found Next.js data:', Object.keys(nextData));
+          
+          // Try to find citation metadata in the page props
+          const pageProps = nextData?.props?.pageProps;
+          if (pageProps) {
+            console.log('PageProps keys:', Object.keys(pageProps));
+            
+            // Look for citation metadata or retrieval results
+            if (pageProps.serverResponse?.data?.retrieval_results) {
+              const results = pageProps.serverResponse.data.retrieval_results;
+              results.forEach((result, idx) => {
+                if (result.metadata?.url) {
+                  citationData.push({
+                    number: idx + 1,
+                    url: result.metadata.url,
+                    text: result.metadata.title || `Citation ${idx + 1}`,
+                    source: 'next_data'
+                  });
+                  seenUrls.add(result.metadata.url);
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Error parsing Next.js data:', e.message);
+      }
+      
+      // Try to find citation elements by common patterns
+      const citationElements = document.querySelectorAll('[data-citation], .citation, [class*="citation"]');
+      console.log(`Found ${citationElements.length} potential citation elements`);
+      citationElements.forEach((el) => {
+        const url = el.getAttribute('data-url') || el.getAttribute('href') || el.getAttribute('data-href');
+        if (url && url.startsWith('http') && !seenUrls.has(url)) {
+          citationData.push({
+            number: null,
+            url: url,
+            text: el.textContent?.trim() || 'Citation',
+            source: 'data_attribute'
+          });
+          seenUrls.add(url);
+        }
+      });
+      
+      // FALLBACK: Find ALL links on the page
       const allLinks = document.querySelectorAll('a[href]');
       console.log(`Total links found: ${allLinks.length}`);
       
