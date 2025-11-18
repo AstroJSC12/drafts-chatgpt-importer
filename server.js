@@ -113,10 +113,10 @@ app.get('/scrape', async (req, res) => {
     });
   }
 
-  // Validate it's a ChatGPT share URL
+  // Validate it's a ChatGPT URL (accepts both /share/ and /c/ formats)
   if (!url.match(/https:\/\/(chatgpt|chat\.openai)\.com\/(share|c)\/[A-Za-z0-9\-]+/)) {
     return res.status(400).json({ 
-      error: 'Invalid ChatGPT share URL',
+      error: 'Invalid ChatGPT URL (must be /share/ or /c/ format)',
       received: url
     });
   }

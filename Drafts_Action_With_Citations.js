@@ -10,17 +10,23 @@
     const d = draft;
     const cleaned = d.content.trim();
 
-    // Accept any valid ChatGPT share URL
+    // Accept any valid ChatGPT URL (/share/ or /c/)
     const shareRegex = /(https:\/\/(chatgpt|chat\.openai)\.com\/(share|c)\/[A-Za-z0-9\-]+)/;
     const match = cleaned.match(shareRegex);
 
     if (!match) {
-        app.displayErrorMessage("This draft must contain a ChatGPT share link.");
+        app.displayErrorMessage("This draft must contain a ChatGPT link (share or conversation URL).");
         return;
     }
 
-    const shareURL = match[1];
-    const shareID = shareURL.split("/").pop().split(/[?#]/)[0];
+    const originalURL = match[1];
+    const shareID = originalURL.split("/").pop().split(/[?#]/)[0];
+    
+    // Convert /c/ URLs to /share/ format for API access
+    const shareURL = originalURL.includes('/c/') 
+        ? originalURL.replace('/c/', '/share/')
+        : originalURL;
+    
     const apiURL = `https://chatgpt.com/backend-api/share/${shareID}`;
 
     // Fetch JSON from ChatGPT API
@@ -56,8 +62,9 @@
         citationDebug = "Citations: fetching...";
         
         const citationHttp = HTTP.create();
+        // Use originalURL so scraper sees the actual page format
         const citationResponse = citationHttp.request({
-            url: `${SCRAPER_API}/scrape?url=${encodeURIComponent(shareURL)}`,
+            url: `${SCRAPER_API}/scrape?url=${encodeURIComponent(originalURL)}`,
             method: "GET",
             timeout: 60 // Wait up to 60 seconds for free tier spin-up
         });
