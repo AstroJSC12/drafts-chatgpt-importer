@@ -5,6 +5,10 @@
     // Replace with your deployed scraper URL:
     const SCRAPER_API = "https://drafts-chatgpt-importer.onrender.com"; // or .railway.app or .fly.dev
     const ENABLE_CITATIONS = true; // Set to false to skip citation scraping
+    
+    // OpenAI Session Token (REQUIRED for citation extraction)
+    // Get from: ChatGPT → DevTools → Application → Cookies → __Secure-next-auth.session-token
+    const OPENAI_SESSION_TOKEN = "YOUR_SESSION_TOKEN_HERE";
     // =========================
 
     const d = draft;
@@ -58,37 +62,44 @@
     let citationDebug = "Citations: disabled";
     
     if (ENABLE_CITATIONS && SCRAPER_API !== "https://YOUR-APP-NAME.onrender.com") {
-        console.log("Fetching citations from scraper...");
-        citationDebug = "Citations: fetching...";
-        
-        const citationHttp = HTTP.create();
-        // Use originalURL so scraper sees the actual page format
-        const citationResponse = citationHttp.request({
-            url: `${SCRAPER_API}/scrape?url=${encodeURIComponent(originalURL)}`,
-            method: "GET",
-            timeout: 60 // Wait up to 60 seconds for free tier spin-up
-        });
-
-        if (citationResponse.success) {
-            try {
-                const citationData = JSON.parse(citationResponse.responseText);
-                console.log("Citation API response:", JSON.stringify(citationData));
-                
-                if (citationData.success && citationData.citations) {
-                    citations = citationData.citations;
-                    citationDebug = `Citations: found ${citations.length}`;
-                    console.log(`✓ Found ${citations.length} citations`);
-                } else {
-                    citationDebug = "Citations: none found in page";
-                    console.log("No citations in API response");
-                }
-            } catch (e) {
-                citationDebug = `Citations: parse error - ${e}`;
-                console.log("Could not parse citation data:", e);
-            }
+        // Check if token is configured
+        if (!OPENAI_SESSION_TOKEN || OPENAI_SESSION_TOKEN === "YOUR_SESSION_TOKEN_HERE") {
+            console.log("⚠️ OpenAI session token not configured - citations will not be extracted");
+            citationDebug = "Citations: token not configured";
         } else {
-            citationDebug = `Citations: API failed (${citationResponse.statusCode || 'unknown error'})`;
-            console.log("Citation scraper request failed:", citationResponse.error || citationResponse.statusCode);
+            console.log("Fetching citations from scraper...");
+            citationDebug = "Citations: fetching...";
+            
+            const citationHttp = HTTP.create();
+            // Use originalURL so scraper sees the actual page format
+            // Pass session token for authentication
+            const citationResponse = citationHttp.request({
+                url: `${SCRAPER_API}/scrape?url=${encodeURIComponent(originalURL)}&token=${encodeURIComponent(OPENAI_SESSION_TOKEN)}`,
+                method: "GET",
+                timeout: 60 // Wait up to 60 seconds for free tier spin-up
+            });
+
+            if (citationResponse.success) {
+                try {
+                    const citationData = JSON.parse(citationResponse.responseText);
+                    console.log("Citation API response:", JSON.stringify(citationData));
+                    
+                    if (citationData.success && citationData.citations) {
+                        citations = citationData.citations;
+                        citationDebug = `Citations: found ${citations.length}`;
+                        console.log(`✓ Found ${citations.length} citations`);
+                    } else {
+                        citationDebug = "Citations: none found in page";
+                        console.log("No citations in API response");
+                    }
+                } catch (e) {
+                    citationDebug = `Citations: parse error - ${e}`;
+                    console.log("Could not parse citation data:", e);
+                }
+            } else {
+                citationDebug = `Citations: API failed (${citationResponse.statusCode || 'unknown error'})`;
+                console.log("Citation scraper request failed:", citationResponse.error || citationResponse.statusCode);
+            }
         }
     }
 

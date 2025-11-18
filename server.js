@@ -102,14 +102,14 @@ app.get('/debug', async (req, res) => {
 
 // Scrape endpoint
 app.get('/scrape', async (req, res) => {
-  const { url } = req.query;
+  const { url, token } = req.query;
   
   console.log(`[${new Date().toISOString()}] Request received`);
   
   if (!url) {
     return res.status(400).json({ 
       error: 'Missing URL parameter',
-      usage: '/scrape?url=https://chatgpt.com/share/xxxxx'
+      usage: '/scrape?url=https://chatgpt.com/share/xxxxx&token=YOUR_SESSION_TOKEN'
     });
   }
 
@@ -141,6 +141,23 @@ app.get('/scrape', async (req, res) => {
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     });
+    
+    // Add authentication cookies if token provided
+    if (token) {
+      await context.addCookies([
+        {
+          name: '__Secure-next-auth.session-token',
+          value: token,
+          domain: '.chatgpt.com',
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax'
+        }
+      ]);
+      console.log(`[${new Date().toISOString()}] Using authenticated session`);
+    }
+    
     const page = await context.newPage();
     
     console.log(`[${new Date().toISOString()}] Navigating to page...`);
